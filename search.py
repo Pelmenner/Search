@@ -8,18 +8,15 @@ import pandas as pd
 import utils
 from article import Article
 from scorer import Scorer
+from cProfile import Profile
 
 RETRIEVE_CNT = 50
-
-# TODO: don't save TfidfVectorizer
-# TODO: remove duplicates
-# TODO: refactor...
-# TODO: -> github
-
 
 index = defaultdict(list)
 articles = []
 scorer = Scorer()
+pr = Profile()
+pr.disable()
 
 
 def load_index() -> bool:
@@ -43,8 +40,9 @@ def process_document_index(article_queue: mp.JoinableQueue, result_queue: mp.Que
         try:
             task = article_queue.get()
             if task is None:
+                result_queue.put(local_index)
                 article_queue.task_done()
-                break
+                return
 
             ind, article = task
             for word in set(utils.tokenize(article.text) + utils.tokenize(article.title)):
@@ -52,10 +50,9 @@ def process_document_index(article_queue: mp.JoinableQueue, result_queue: mp.Que
             article_queue.task_done()
         except Exception as e:
             print(mp.process.current_process(), 'task failed.', e)
-    result_queue.put(local_index)
 
 
-def load_articles(filename: str = 'habr_posts100.csv'):
+def load_articles(filename: str = 'habr_posts.csv'):
     articles_df = pd.read_csv(filename)
     articles_df['rating'] = articles_df['rating'].apply(lambda x: x.replace('–', '-'))  # not the same
     global articles
@@ -84,6 +81,8 @@ def build_index():
         p.start()
 
     article_queue.join()
+    for process in processes:
+        process.terminate()
 
     print('joining...')
     while not result_queue.empty():
@@ -101,6 +100,8 @@ def build_search():
         print('using prebuilt index and scorer')
         return
 
+    pr.enable()
+
     print('loading articles...')
     load_articles()
 
@@ -108,11 +109,14 @@ def build_search():
     build_index()
 
     print('fitting scorer...')
-    scorer.fit(articles)
+    scorer.fit(articles, index)
 
     print('saving...')
     save_index()
     print('index successfully built')
+
+    pr.disable()
+    pr.dump_stats('build_search_profile.pstat')
 
 
 def retrieve_indices(query: str) -> List[int]:

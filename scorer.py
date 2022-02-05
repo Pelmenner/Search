@@ -2,23 +2,28 @@ import io
 import math
 import multiprocessing as mp
 from collections import Counter
-from functools import partial
 from itertools import islice
-from typing import List
+from typing import List, Dict
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
 
 import utils
 from article import Article
 
 
-def article_text_to_vector(article: Article, word_vectors: dict, idf: dict, zero_vec) -> np.ndarray:
+def initializer(word_vectors_arg, idf_arg, zero_vec_arg):
+    global word_vectors, idf, zero_vec
+    word_vectors = word_vectors_arg
+    idf = idf_arg
+    zero_vec = zero_vec_arg
+
+
+def article_text_to_vector(article: Article) -> np.ndarray:
     return sum(word_vectors.get(w, zero_vec) * idf.get(w, 1) for w in utils.tokenize(article.text))
 
 
-def article_title_to_vector(article: Article, word_vectors: dict, idf: dict, zero_vec) -> np.ndarray:
+def article_title_to_vector(article: Article) -> np.ndarray:
     return sum(word_vectors.get(w, zero_vec) * idf.get(w, 1) for w in utils.tokenize(article.title))
 
 
@@ -28,7 +33,6 @@ class Scorer:
         self.title_vectors = []
         self.word_vectors = dict()
         self.idf = dict()
-        self.tfidf = TfidfVectorizer(tokenizer=utils.tokenize)
         self.zero_vec = np.array([])
         self.text_tf = []
         self.title_tf = []
@@ -56,27 +60,23 @@ class Scorer:
     def count_title_words(article: Article):
         return Counter(utils.tokenize(article.title))
 
-    def fit(self, article_list: List[Article]):
-        self.word_vectors = self.load_vectors('cc.ru.300.vec', 100000)
+    def fit(self, article_list: List[Article], document_index: Dict[str, List[int]]):
+        self.word_vectors = self.load_vectors('cc.ru.300.vec', 200000)
         self.zero_vec = np.zeros(shape=self.word_vectors['я'].shape)
         print('training tfidf...')
-        self.tfidf.fit([article.text for article in article_list])
-        self.idf = dict(zip(self.tfidf.get_feature_names_out(), self.tfidf.idf_ - 1))
+        self.idf = {key: np.log(len(article_list) / len(document_index[key])) for key in document_index.keys()}
         print('building tf...')
         with mp.Pool() as pool:
             self.text_tf = pool.map(Scorer.count_text_words, article_list)
             self.title_tf = pool.map(Scorer.count_title_words, article_list)
 
         print('building article vectors')
-        mgr = mp.Manager()
-        word_vectors = mgr.dict(self.word_vectors)
-        idf = mgr.dict(self.idf)
-        with mp.Pool() as pool:
+        with mp.Pool(4, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
             self.article_vectors = pool.map(
-                partial(article_text_to_vector, word_vectors=word_vectors, idf=idf, zero_vec=self.zero_vec),
+                article_text_to_vector,
                 article_list)
             self.title_vectors = pool.map(
-                partial(article_title_to_vector, word_vectors=word_vectors, idf=idf, zero_vec=self.zero_vec),
+                article_title_to_vector,
                 article_list)
 
         self.article_lengths = [len(article.text) for article in article_list]
@@ -112,7 +112,7 @@ class Scorer:
         article_vec = self.title_vectors[article_ind]
         return query_vec.dot(article_vec) / np.linalg.norm(article_vec) / np.linalg.norm(query_vec)
 
-    def score(self, query: str, article_ind: int) -> float:  # TODO: add regression on top
+    def score(self, query: str, article_ind: int) -> float:
         keywords = utils.tokenize(query)
         tfidf_text_score = self.tfidf_text_score(keywords, article_ind)
         tfidf_title_score = self.tfidf_title_score(keywords, article_ind)

@@ -1,4 +1,5 @@
 import io
+import logging
 import math
 import multiprocessing as mp
 from collections import Counter
@@ -63,14 +64,14 @@ class Scorer:
     def fit(self, article_list: List[Article], document_index: Dict[str, List[int]]):
         self.word_vectors = self.load_vectors('cc.ru.300.vec', 200000)
         self.zero_vec = np.zeros(shape=self.word_vectors['я'].shape)
-        print('training tfidf...')
+        logging.info('training tfidf...')
         self.idf = {key: np.log(len(article_list) / len(document_index[key])) for key in document_index.keys()}
-        print('building tf...')
+        logging.info('building tf...')
         with mp.Pool() as pool:
             self.text_tf = pool.map(Scorer.count_text_words, article_list)
             self.title_tf = pool.map(Scorer.count_title_words, article_list)
 
-        print('building article vectors')
+        logging.info('building article vectors')
         with mp.Pool(4, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
             self.article_vectors = pool.map(
                 article_text_to_vector,
@@ -118,8 +119,4 @@ class Scorer:
         tfidf_title_score = self.tfidf_title_score(keywords, article_ind)
         word2vec_text_score = self.word2vec_text_score(keywords, article_ind)
         word2vec_title_score = self.word2vec_title_score(keywords, article_ind)
-        # print('tfidf text score', tfidf_text_score * 500)
-        # print('tfidf title score', tfidf_title_score * 50)
-        # print('word2vec text score', word2vec_text_score)
-        # print('word2vec title score', word2vec_title_score)
         return tfidf_text_score * 500 + word2vec_text_score + tfidf_title_score * 50 + word2vec_title_score * 0.5

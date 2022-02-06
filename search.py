@@ -1,5 +1,7 @@
+import logging
 import multiprocessing as mp
 import pickle
+from cProfile import Profile
 from collections import defaultdict
 from typing import List
 
@@ -8,13 +10,15 @@ import pandas as pd
 import utils
 from article import Article
 from scorer import Scorer
-from cProfile import Profile
 
 RETRIEVE_CNT = 50
 
 index = defaultdict(list)
 articles = []
 scorer = Scorer()
+logging.basicConfig()
+logger = logging.getLogger('search')
+logger.setLevel(logging.INFO)
 pr = Profile()
 pr.disable()
 
@@ -49,7 +53,7 @@ def process_document_index(article_queue: mp.JoinableQueue, result_queue: mp.Que
                 local_index[word].append(ind)
             article_queue.task_done()
         except Exception as e:
-            print(mp.process.current_process(), 'task failed.', e)
+            logger.error(f'{mp.process.current_process()} task failed. {e}')
 
 
 def load_articles(filename: str = 'habr_posts.csv'):
@@ -84,43 +88,43 @@ def build_index():
     for process in processes:
         process.terminate()
 
-    print('joining...')
+    logger.info('joining...')
     while not result_queue.empty():
         local_index = result_queue.get()
         for key in local_index:
             index[key] += local_index[key]
 
-    print('sorting index...')
+    logger.info('sorting index...')
     for key in index:
         index[key].sort()
 
 
 def build_search():
     if load_index():
-        print('using prebuilt index and scorer')
+        logger.info('using prebuilt index and scorer')
         return
 
     pr.enable()
 
-    print('loading articles...')
+    logger.info('loading articles...')
     load_articles()
 
-    print('building index...')
+    logger.info('building index...')
     build_index()
 
-    print('fitting scorer...')
+    logger.info('fitting scorer...')
     scorer.fit(articles, index)
 
-    print('saving...')
+    logger.info('saving...')
     save_index()
-    print('index successfully built')
+    logger.info('index successfully built')
 
     pr.disable()
     pr.dump_stats('build_search_profile.pstat')
 
 
 def retrieve_indices(query: str) -> List[int]:
-    print('query:', query)
+    logger.log(f'query: {query}')
     keywords = utils.tokenize(query)
     if not keywords:
         return []

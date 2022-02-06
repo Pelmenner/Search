@@ -159,4 +159,4 @@ def retrieve_indices(query: str) -> List[int]:
             if pointers[0] >= len(index[keywords[0]]):
                 break
 
-    return s[:50]
+    return s[:RETRIEVE_CNT]

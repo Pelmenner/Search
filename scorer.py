@@ -105,12 +105,12 @@ class Scorer:
     def word2vec_text_score(self, keywords: List[str], article_ind: int) -> float:
         query_vec = self.get_query_vec(keywords)
         article_vec = self.article_vectors[article_ind]
-        return query_vec.dot(article_vec) / np.linalg.norm(article_vec) / np.linalg.norm(query_vec)
+        return utils.cosine_similarity(article_vec, query_vec)
 
     def word2vec_title_score(self, keywords: List[str], article_ind: int) -> float:
         query_vec = self.get_query_vec(keywords)
         article_vec = self.title_vectors[article_ind]
-        return query_vec.dot(article_vec) / np.linalg.norm(article_vec) / np.linalg.norm(query_vec)
+        return utils.cosine_similarity(article_vec, query_vec)
 
     def score(self, query: str, article_ind: int) -> float:
         keywords = utils.tokenize(query)

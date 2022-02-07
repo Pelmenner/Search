@@ -4,6 +4,7 @@ import pickle
 from cProfile import Profile
 from collections import defaultdict
 from typing import List
+import queue
 
 import pandas as pd
 
@@ -16,7 +17,7 @@ RETRIEVE_CNT = 50
 index = defaultdict(list)
 articles = []
 scorer = Scorer()
-logging.basicConfig()
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('search')
 logger.setLevel(logging.INFO)
 pr = Profile()
@@ -46,14 +47,14 @@ def process_document_index(article_queue: mp.JoinableQueue, result_queue: mp.Que
             if task is None:
                 result_queue.put(local_index)
                 article_queue.task_done()
-                return
+                return 0
 
             ind, article = task
             for word in set(utils.tokenize(article.text) + utils.tokenize(article.title)):
                 local_index[word].append(ind)
             article_queue.task_done()
         except Exception as e:
-            logger.error(f'{mp.process.current_process()} task failed. {e}')
+            logging.exception(f'{mp.process.current_process()} task failed. {e}')
 
 
 def load_articles(filename: str = 'habr_posts.csv'):
@@ -84,17 +85,29 @@ def build_index():
         processes.append(p)
         p.start()
 
+    result_dicts = []
+    while True:
+        try:
+            result = result_queue.get(False, 0.01)
+            result_dicts.append(result)
+        except queue.Empty:
+            pass
+        all_exited = True
+        for t in processes:
+            if t.exitcode is None:
+                all_exited = False
+                break
+        if all_exited & result_queue.empty():
+            break
+
     article_queue.join()
     for process in processes:
-        process.terminate()
+        process.join()
 
-    logger.info('joining...')
-    while not result_queue.empty():
-        local_index = result_queue.get()
+    for local_index in result_dicts:
         for key in local_index:
             index[key] += local_index[key]
 
-    logger.info('sorting index...')
     for key in index:
         index[key].sort()
 
@@ -124,7 +137,7 @@ def build_search():
 
 
 def retrieve_indices(query: str) -> List[int]:
-    logger.log(f'query: {query}')
+    logger.info(f'query: {query}')
     keywords = utils.tokenize(query)
     if not keywords:
         return []

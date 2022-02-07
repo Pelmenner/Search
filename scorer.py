@@ -12,6 +12,8 @@ from tqdm import tqdm
 import utils
 from article import Article
 
+logging.basicConfig(level=logging.INFO)
+
 
 def initializer(word_vectors_arg, idf_arg, zero_vec_arg):
     global word_vectors, idf, zero_vec
@@ -20,12 +22,8 @@ def initializer(word_vectors_arg, idf_arg, zero_vec_arg):
     zero_vec = zero_vec_arg
 
 
-def article_text_to_vector(article: Article) -> np.ndarray:
-    return sum(word_vectors.get(w, zero_vec) * idf.get(w, 1) for w in utils.tokenize(article.text))
-
-
-def article_title_to_vector(article: Article) -> np.ndarray:
-    return sum(word_vectors.get(w, zero_vec) * idf.get(w, 1) for w in utils.tokenize(article.title))
+def text_to_vector(text: List[str]) -> np.ndarray:
+    return sum(word_vectors.get(w, zero_vec) * idf.get(w, 1) for w in text)
 
 
 class Scorer:
@@ -54,34 +52,45 @@ class Scorer:
         return sum(self.word_vectors.get(w, self.zero_vec) * self.get_idf(w) for w in utils.tokenize(text))
 
     @staticmethod
-    def count_text_words(article: Article):
-        return Counter(utils.tokenize(article.text))
+    def count_words(text: List[str]):
+        return Counter(text)
 
     @staticmethod
-    def count_title_words(article: Article):
-        return Counter(utils.tokenize(article.title))
+    def split_article_text(article: Article) -> List[str]:
+        return utils.tokenize(article.text)
+
+    @staticmethod
+    def split_article_title(article: Article) -> List[str]:
+        return utils.tokenize(article.title)
 
     def fit(self, article_list: List[Article], document_index: Dict[str, List[int]]):
         self.word_vectors = self.load_vectors('cc.ru.300.vec', 200000)
         self.zero_vec = np.zeros(shape=self.word_vectors['я'].shape)
-        logging.info('training tfidf...')
-        self.idf = {key: np.log(len(article_list) / len(document_index[key])) for key in document_index.keys()}
+
+        with mp.Pool() as pool:
+            article_texts = pool.map(Scorer.split_article_text, article_list)
+            article_titles = pool.map(Scorer.split_article_title, article_list)
+
+        logging.info('building idf...')
+        self.idf = {key: np.log((len(article_list) + 1) / (len(document_index[key]) + 1))
+                    for key in document_index.keys()}
+
         logging.info('building tf...')
         with mp.Pool() as pool:
-            self.text_tf = pool.map(Scorer.count_text_words, article_list)
-            self.title_tf = pool.map(Scorer.count_title_words, article_list)
+            self.text_tf = pool.map(Scorer.count_words, article_texts)
+            self.title_tf = pool.map(Scorer.count_words, article_titles)
 
         logging.info('building article vectors')
-        with mp.Pool(4, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
+        with mp.Pool(6, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
             self.article_vectors = pool.map(
-                article_text_to_vector,
-                article_list)
+                text_to_vector,
+                article_texts)
             self.title_vectors = pool.map(
-                article_title_to_vector,
-                article_list)
+                text_to_vector,
+                article_titles)
 
-        self.article_lengths = [len(article.text) for article in article_list]
-        self.title_lengths = [len(article.title) for article in article_list]
+        self.article_lengths = [len(text) for text in article_texts]
+        self.title_lengths = [len(title) for title in article_titles]
 
     def tfidf_text_score(self, keywords: List[str], article_ind: int) -> float:
         score = sum(
@@ -119,4 +128,4 @@ class Scorer:
         tfidf_title_score = self.tfidf_title_score(keywords, article_ind)
         word2vec_text_score = self.word2vec_text_score(keywords, article_ind)
         word2vec_title_score = self.word2vec_title_score(keywords, article_ind)
-        return tfidf_text_score * 500 + word2vec_text_score + tfidf_title_score * 50 + word2vec_title_score * 0.5
+        return tfidf_text_score * 10 + word2vec_text_score + tfidf_title_score * 5 + word2vec_title_score * 0.5

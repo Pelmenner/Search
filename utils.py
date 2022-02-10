@@ -2,16 +2,18 @@ from typing import List
 
 import nltk
 import numpy as np
+import pymorphy2
 
-stemmer = nltk.stem.SnowballStemmer(language='russian')
+morph = pymorphy2.MorphAnalyzer()
+stopwords = nltk.corpus.stopwords.words('russian')
 
 
 def normalize_word(s: str) -> str:
-    return stemmer.stem(s.lower())
+    return morph.parse(s.lower())[0].normal_form
 
 
 def tokenize(text: str) -> List[str]:
-    return list(map(normalize_word, nltk.word_tokenize(text.rstrip())))
+    return [normalize_word(w) for w in nltk.word_tokenize(text.rstrip()) if len(w) > 2 and w not in stopwords]
 
 
 def cosine_similarity(v1: np.array, v2: np.array):

@@ -140,7 +140,10 @@ def retrieve_indices(query: str) -> List[int]:
     logger.info(f'query: {query}')
     keywords = utils.tokenize(query)
     if not keywords:
-        return []
+        if query == '':
+            return []
+        else:
+            return list(range(RETRIEVE_CNT))
 
     for keyword in keywords:
         if keyword not in index:

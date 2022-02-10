@@ -124,6 +124,8 @@ class Scorer:
 
     def score(self, query: str, article_ind: int) -> float:
         keywords = utils.tokenize(query)
+        if not keywords:
+            return 0
         tfidf_text_score = self.tfidf_text_score(keywords, article_ind)
         tfidf_title_score = self.tfidf_title_score(keywords, article_ind)
         word2vec_text_score = self.word2vec_text_score(keywords, article_ind)

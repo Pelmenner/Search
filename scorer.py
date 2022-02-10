@@ -13,6 +13,7 @@ import utils
 from article import Article
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('scorer')
 
 
 def initializer(word_vectors_arg, idf_arg, zero_vec_arg):
@@ -71,16 +72,16 @@ class Scorer:
             article_texts = pool.map(Scorer.split_article_text, article_list)
             article_titles = pool.map(Scorer.split_article_title, article_list)
 
-        logging.info('building idf...')
+        logger.info('building idf')
         self.idf = {key: np.log((len(article_list) + 1) / (len(document_index[key]) + 1))
                     for key in document_index.keys()}
 
-        logging.info('building tf...')
+        logger.info('building tf')
         with mp.Pool() as pool:
             self.text_tf = pool.map(Scorer.count_words, article_texts)
             self.title_tf = pool.map(Scorer.count_words, article_titles)
 
-        logging.info('building article vectors')
+        logger.info('building article vectors')
         with mp.Pool(6, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
             self.article_vectors = pool.map(
                 text_to_vector,

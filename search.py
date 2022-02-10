@@ -28,6 +28,7 @@ def load_index() -> bool:
     global index, articles, scorer
     try:
         with open('search_dump.pkl', 'rb') as f:
+            logger.info('using prebuilt index and scorer')
             index, articles, scorer = pickle.load(f)
         return True
     except OSError:
@@ -36,6 +37,7 @@ def load_index() -> bool:
 
 def save_index():
     with open('search_dump.pkl', 'wb') as f:
+        logger.info('saving')
         pickle.dump([index, articles, scorer], f)
 
 
@@ -58,6 +60,7 @@ def process_document_index(article_queue: mp.JoinableQueue, result_queue: mp.Que
 
 
 def load_articles(filename: str = 'habr_posts.csv'):
+    logger.info('loading articles')
     articles_df = pd.read_csv(filename)
     articles_df['rating'] = articles_df['rating'].apply(lambda x: x.replace('–', '-'))  # not the same
     global articles
@@ -68,6 +71,7 @@ def load_articles(filename: str = 'habr_posts.csv'):
 
 
 def build_index():
+    logger.info('building index')
     num_workers = mp.cpu_count()
     article_queue = mp.JoinableQueue()
 
@@ -114,23 +118,15 @@ def build_index():
 
 def build_search():
     if load_index():
-        logger.info('using prebuilt index and scorer')
         return
 
     pr.enable()
 
-    logger.info('loading articles...')
     load_articles()
-
-    logger.info('building index...')
     build_index()
-
-    logger.info('fitting scorer...')
     scorer.fit(articles, index)
-
-    logger.info('saving...')
-    save_index()
     logger.info('index successfully built')
+    save_index()
 
     pr.disable()
     pr.dump_stats('build_search_profile.pstat')

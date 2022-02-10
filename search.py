@@ -12,7 +12,7 @@ import utils
 from article import Article
 from scorer import Scorer
 
-RETRIEVE_CNT = 50
+RETRIEVE_CNT = 200
 
 index = defaultdict(list)
 articles = []

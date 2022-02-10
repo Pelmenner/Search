@@ -38,7 +38,7 @@ class Scorer:
         self.title_tf = []
         self.article_lengths = []
         self.title_lengths = []
-        self.score_weights = {'tfidf_text': 10, 'word2vec_text': 1, 'tfidf_title': 5, 'word2vec_title': 0.5}
+        self.score_weights = {'word2vec_text': 0.1, 'tfidf_text': 0.9, 'word2vec_title': 0.05, 'tfidf_title': 0.3}
 
     @staticmethod
     def load_vectors(filename: str, limit: int):

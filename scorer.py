@@ -38,6 +38,7 @@ class Scorer:
         self.title_tf = []
         self.article_lengths = []
         self.title_lengths = []
+        self.score_weights = {'tfidf_text': 10, 'word2vec_text': 1, 'tfidf_title': 5, 'word2vec_title': 0.5}
 
     @staticmethod
     def load_vectors(filename: str, limit: int):
@@ -64,23 +65,18 @@ class Scorer:
     def split_article_title(article: Article) -> List[str]:
         return utils.tokenize(article.title)
 
-    def fit(self, article_list: List[Article], document_index: Dict[str, List[int]]):
-        self.word_vectors = self.load_vectors('cc.ru.300.vec', 200000)
-        self.zero_vec = np.zeros(shape=self.word_vectors['я'].shape)
-
-        with mp.Pool() as pool:
-            article_texts = pool.map(Scorer.split_article_text, article_list)
-            article_titles = pool.map(Scorer.split_article_title, article_list)
-
+    def build_idf(self, article_cnt: int, document_index: Dict[str, List[int]]):
         logger.info('building idf')
-        self.idf = {key: np.log((len(article_list) + 1) / (len(document_index[key]) + 1))
+        self.idf = {key: np.log((article_cnt + 1) / (len(document_index[key]) + 1))
                     for key in document_index.keys()}
 
+    def build_tf(self, article_texts: List[List[str]], article_titles: List[List[str]]):
         logger.info('building tf')
         with mp.Pool() as pool:
             self.text_tf = pool.map(Scorer.count_words, article_texts)
             self.title_tf = pool.map(Scorer.count_words, article_titles)
 
+    def build_article_vectors(self, article_texts: List[List[str]], article_titles: List[List[str]]):
         logger.info('building article vectors')
         with mp.Pool(6, initializer=initializer, initargs=(self.word_vectors, self.idf, self.zero_vec)) as pool:
             self.article_vectors = pool.map(
@@ -89,6 +85,18 @@ class Scorer:
             self.title_vectors = pool.map(
                 text_to_vector,
                 article_titles)
+
+    def fit(self, article_list: List[Article], document_index: Dict[str, List[int]]):
+        self.word_vectors = self.load_vectors('cc.ru.300.vec', 200000)
+        self.zero_vec = np.zeros(shape=self.word_vectors['я'].shape)
+
+        with mp.Pool() as pool:
+            article_texts = pool.map(Scorer.split_article_text, article_list)
+            article_titles = pool.map(Scorer.split_article_title, article_list)
+
+        self.build_idf(len(article_list), document_index)
+        self.build_tf(article_texts, article_titles)
+        self.build_article_vectors(article_texts, article_titles)
 
         self.article_lengths = [len(text) for text in article_texts]
         self.title_lengths = [len(title) for title in article_titles]
@@ -127,8 +135,13 @@ class Scorer:
         keywords = utils.tokenize(query)
         if not keywords:
             return 0
+
         tfidf_text_score = self.tfidf_text_score(keywords, article_ind)
         tfidf_title_score = self.tfidf_title_score(keywords, article_ind)
         word2vec_text_score = self.word2vec_text_score(keywords, article_ind)
         word2vec_title_score = self.word2vec_title_score(keywords, article_ind)
-        return tfidf_text_score * 10 + word2vec_text_score + tfidf_title_score * 5 + word2vec_title_score * 0.5
+
+        return (tfidf_text_score * self.score_weights['tfidf_text']
+                + word2vec_text_score * self.score_weights['word2vec_text']
+                + tfidf_title_score * self.score_weights['tfidf_title']
+                + word2vec_title_score * self.score_weights['word2vec_title'])

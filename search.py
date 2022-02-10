@@ -1,10 +1,10 @@
 import logging
 import multiprocessing as mp
 import pickle
+import queue
 from cProfile import Profile
 from collections import defaultdict
-from typing import List
-import queue
+from typing import List, Callable, Tuple
 
 import pandas as pd
 
@@ -17,6 +17,7 @@ RETRIEVE_CNT = 50
 index = defaultdict(list)
 articles = []
 scorer = Scorer()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('search')
 logger.setLevel(logging.INFO)
@@ -70,25 +71,7 @@ def load_articles(filename: str = 'habr_posts.csv'):
     articles.sort(key=lambda x: -x.rating)
 
 
-def build_index():
-    logger.info('building index')
-    num_workers = mp.cpu_count()
-    article_queue = mp.JoinableQueue()
-
-    for task in enumerate(articles):
-        article_queue.put(task)
-
-    for worker in range(num_workers):
-        article_queue.put(None)
-
-    processes = []
-    result_queue = mp.Queue()
-    for c in range(num_workers):
-        p = mp.Process(target=process_document_index, args=(article_queue, result_queue))
-        p.name = 'worker' + str(c)
-        processes.append(p)
-        p.start()
-
+def collect_results(result_queue: mp.Queue, processes: List[mp.Process]) -> List:
     result_dicts = []
     while True:
         try:
@@ -103,7 +86,34 @@ def build_index():
                 break
         if all_exited & result_queue.empty():
             break
+    return result_dicts
 
+
+def create_processes(process_cnt: int, target_function: Callable, args: Tuple) -> List[mp.Process]:
+    processes = []
+    for c in range(process_cnt):
+        p = mp.Process(target=target_function, args=args)
+        p.name = 'worker' + str(c)
+        processes.append(p)
+        p.start()
+    return processes
+
+
+def build_index():
+    logger.info('building index')
+    num_workers = mp.cpu_count()
+    article_queue = mp.JoinableQueue()
+
+    for task in enumerate(articles):
+        article_queue.put(task)
+
+    for worker in range(num_workers):
+        article_queue.put(None)
+
+    result_queue = mp.Queue()
+    processes = create_processes(num_workers, process_document_index, (article_queue, result_queue))
+
+    result_dicts = collect_results(result_queue, processes)
     article_queue.join()
     for process in processes:
         process.join()

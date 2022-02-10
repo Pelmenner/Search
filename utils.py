@@ -5,7 +5,7 @@ import numpy as np
 import pymorphy2
 
 morph = pymorphy2.MorphAnalyzer()
-stopwords = nltk.corpus.stopwords.words('russian')
+stopwords = set(nltk.corpus.stopwords.words('russian'))
 
 
 def normalize_word(s: str) -> str:
